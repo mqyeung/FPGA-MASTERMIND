@@ -1,0 +1,380 @@
+/******************************************************************************/
+/*                                                                            */
+/* main.c -- Demo project for the PmodOLEDrgb IP                              */
+/*                                                                            */
+/******************************************************************************/
+/* Author: Thomas Kappenman                                                   */
+/* Copyright 2016, Digilent Inc.                                              */
+/******************************************************************************/
+/* File Description:                                                          */
+/*                                                                            */
+/* This demo project initializes and uses the PmodOLEDrgb to display strings  */
+/* of different colors and a BMP image.                                       */
+/*                                                                            */
+/******************************************************************************/
+/* Revision History:                                                          */
+/*                                                                            */
+/*    02/08/2016(TommyK):   Created                                           */
+/*    08/25/2017(artvvb):   Added proper cache management functions           */
+/*    11/11/2017(atangzwj): Validated for Vivado 2016.4                       */
+/*    02/17/2018(atangzwj): Validated for Vivado 2017.4                       */
+/*                                                                            */
+/******************************************************************************/
+
+#include "bitmap.h"
+#include "PmodOLEDrgb.h"
+#include "sleep.h"
+#include "xil_cache.h"
+#include "xparameters.h"
+//AXI GPIO driver
+#include "xgpio.h"
+#include <math.h>
+
+//send data over UART
+#include "xil_printf.h"
+
+//information about AXI peripherals
+#include "xparameters.h"
+
+#include <stdio.h>
+#include "platform.h"
+
+#include <stdlib.h>
+#include <time.h>
+
+//#include "xil_time.h"
+//#include <xgpio.h>
+void DemoInitialize();
+void DemoRun();
+void DemoCleanup();
+void EnableCaches();
+void DisableCaches();
+
+PmodOLEDrgb oledrgb;
+
+u8 rgbUserFont[] = {
+   0x00, 0x04, 0x02, 0x1F, 0x02, 0x04, 0x00, 0x00, // 0x00
+   0x0E, 0x1F, 0x15, 0x1F, 0x17, 0x10, 0x1F, 0x0E, // 0x01
+   0x00, 0x1F, 0x11, 0x00, 0x00, 0x11, 0x1F, 0x00, // 0x02
+   0x00, 0x0A, 0x15, 0x11, 0x0A, 0x04, 0x00, 0x00, // 0x03
+   0x07, 0x0C, 0xFA, 0x2F, 0x2F, 0xFA, 0x0C, 0x07  // 0x04
+}; // This table defines 5 user characters, although only one is used
+
+int main(void) {
+   DemoInitialize();
+   DemoRun();
+   DemoCleanup();
+   return 0;
+}
+
+void DemoInitialize() {
+   EnableCaches();
+   OLEDrgb_begin(&oledrgb, XPAR_PMODOLEDRGB_0_AXI_LITE_GPIO_BASEADDR,
+         XPAR_PMODOLEDRGB_0_AXI_LITE_SPI_BASEADDR);
+}
+
+int switchToInt(int input){ //takes a four bit input and changes it into the decimal value
+	return log2(input);
+}
+
+void DemoRun() {
+   char ch;
+
+   // Define the user definable characters
+   for (ch = 0; ch < 5; ch++) {
+      OLEDrgb_DefUserChar(&oledrgb, ch, &rgbUserFont[ch * 8]);
+   }
+
+   OLEDrgb_SetCursor(&oledrgb, 0, 0);
+   OLEDrgb_PutString(&oledrgb, "Mastermind"); // Default color (green)
+   OLEDrgb_SetCursor(&oledrgb, 0, 1);
+   OLEDrgb_PutString(&oledrgb, "[CS152B]"); // Default color (green)
+   OLEDrgb_SetFontColor(&oledrgb, OLEDrgb_BuildRGB(0, 0, 255)); // Blue font
+   OLEDrgb_SetCursor(&oledrgb, 0, 4);
+   OLEDrgb_PutString(&oledrgb, "Play!");
+   OLEDrgb_SetCursor(&oledrgb, 0, 5);
+   OLEDrgb_PutString(&oledrgb, "[BTNR]");
+
+//   OLEDrgb_SetFontColor(&oledrgb, OLEDrgb_BuildRGB(200, 200, 44));
+//   OLEDrgb_SetCursor(&oledrgb, 1, 6);
+//   OLEDrgb_PutChar(&oledrgb, 4);
+
+   XGpio input, output;
+   int button_data = 0;
+   int switch_data = 0;
+
+   XGpio_Initialize(&input, XPAR_AXI_GPIO_0_DEVICE_ID);	//initialize input XGpio variable
+  // XGpio_Initialize(&output, XPAR_AXI_GPIO_1_DEVICE_ID);	//initialize output XGpio variable
+
+   XGpio_SetDataDirection(&input, 1, 0xF);			//set first channel tristate buffer to input
+   XGpio_SetDataDirection(&input, 2, 0xF);			//set second channel tristate buffer to input
+
+   //XGpio_SetDataDirection(&output, 1, 0x0);		//set first channel tristate buffer to output
+
+   init_platform();
+
+   int stage = 0;
+   while(stage == 0){
+	   button_data = XGpio_DiscreteRead(&input, 1);	//get button data
+	   if(button_data == 0b00100){
+		   xil_printf("button 2 pressed. game starting\n\r");
+	   	   stage = 1;
+	   }
+   }
+   OLEDrgb_Clear(&oledrgb);
+   usleep(200000);
+   OLEDrgb_SetFontColor(&oledrgb, OLEDrgb_BuildRGB(200, 12, 44));
+   OLEDrgb_SetCursor(&oledrgb, 0, 0);
+   OLEDrgb_PutString(&oledrgb, "Created by");
+   OLEDrgb_SetCursor(&oledrgb, 1, 2);
+   OLEDrgb_PutString(&oledrgb, "Matt");
+   OLEDrgb_SetCursor(&oledrgb, 1, 3);
+   OLEDrgb_PutString(&oledrgb, "Yeung");
+   OLEDrgb_SetCursor(&oledrgb, 1, 4);
+   OLEDrgb_PutString(&oledrgb, "&");
+   OLEDrgb_SetFontColor(&oledrgb, OLEDrgb_BuildRGB(200, 12, 44));
+   OLEDrgb_SetCursor(&oledrgb, 1, 5);
+   OLEDrgb_PutString(&oledrgb, "Vincent");
+   OLEDrgb_SetCursor(&oledrgb, 1, 6);
+   OLEDrgb_PutString(&oledrgb, "Johnson");
+   usleep(20000000);
+
+   OLEDrgb_Clear(&oledrgb);
+   OLEDrgb_SetCursor(&oledrgb, 0, 1);
+   OLEDrgb_PutString(&oledrgb, "Let's Begin!"); // Default color (green)
+   usleep(2000000);
+   OLEDrgb_Clear(&oledrgb);
+   OLEDrgb_SetCursor(&oledrgb, 0, 1);
+   OLEDrgb_PutString(&oledrgb, "Use the switches"); // Default color (green)
+   OLEDrgb_SetCursor(&oledrgb, 0, 2);
+   OLEDrgb_PutString(&oledrgb, "to indicate your"); // Default color (green)
+   OLEDrgb_SetCursor(&oledrgb, 0, 3);
+   OLEDrgb_PutString(&oledrgb, "color guess!"); // Default color (green)
+   usleep(2000000);
+   OLEDrgb_Clear(&oledrgb);
+   OLEDrgb_SetCursor(&oledrgb, 0, 1);
+   OLEDrgb_PutString(&oledrgb, "Each group of four switches is Red - Yellow - Green - Blue."); // Default color (green)
+   usleep(2000000);
+   OLEDrgb_Clear(&oledrgb);
+   int unsubmitted = 1;
+//   srand(time(NULL)); //random generator
+//   XTime t;
+//   XTime_GetTime(&t);
+//   srand((unsigned int) t);
+   int solution[4], guess[4];
+   for (int i = 0; i < 4; i++) { solution[i] = rand() % 4;}
+   xil_printf("Solution generated is: \n\r");
+   for (int i = 0; i < 4; i++) { xil_printf("%d ", solution[i]);}
+//   int colorIndex[5] = {
+//		   OLEDrgb_BuildRGB(255, 0, 0),
+//		   OLEDrgb_BuildRGB(255, 255, 0),
+//		   OLEDrgb_BuildRGB(0, 255, 0),
+//		   OLEDrgb_BuildRGB(255, 0, 255),
+//		   OLEDrgb_BuildRGB(0, 0, 0)
+//   };
+
+   while(stage == 1){ //will keep looping as long as guess is not complete
+	   OLEDrgb_SetCursor(&oledrgb, 2, 1);
+	   OLEDrgb_PutString(&oledrgb, "Guess!"); // Default color (green)
+	   int old_switch_data = 0;
+	   int spot_a, spot_b, spot_c, spot_d = 0;
+	   while (unsubmitted){
+		   switch_data = XGpio_DiscreteRead(&input, 2);	//get switch data
+		   button_data = XGpio_DiscreteRead(&input, 1);	//get button data
+		   if (old_switch_data != switch_data){
+//			   for (int i = 0; i < 4; i++) {
+//				   guess[i] = log2(switch_data >> (4*i) & 0xF);
+//				   OLEDrgb_DrawRectangle(&oledrgb, ((i+1)*16), 24, 31, ((i+2)*16)-1, colorIndex[guess[i]], 1, 	colorIndex[guess[i]]);
+//			   }
+
+			   spot_d = log2(switch_data >> (4*0) & 0xF); //rightmost 4 bits
+			   spot_c = log2(switch_data >> (4*1) & 0xF); //second rightmost 4 bits
+			   spot_b = log2(switch_data >> (4*2) & 0xF); //third rightmost 4 bits
+			   spot_a = log2(switch_data >> (4*3) & 0xF); //fourth rightmost 4 bits
+			   xil_printf("%d, %d, %d, %d\n\r" , spot_a, spot_b, spot_c, spot_d);
+			   if (spot_a == 3) 		OLEDrgb_DrawRectangle(&oledrgb, 16, 24, 31, 39, OLEDrgb_BuildRGB(255, 0, 0), 1, 	OLEDrgb_BuildRGB(255, 0, 0));
+			   else if (spot_a == 2) 	OLEDrgb_DrawRectangle(&oledrgb, 16, 24, 31, 39, OLEDrgb_BuildRGB(255, 255, 0), 1, 	OLEDrgb_BuildRGB(255, 255, 0));
+			   else if (spot_a == 1) 	OLEDrgb_DrawRectangle(&oledrgb, 16, 24, 31, 39, OLEDrgb_BuildRGB(0, 255, 0), 1, 	OLEDrgb_BuildRGB(0,255, 0));
+			   else if (spot_a == 0) 	OLEDrgb_DrawRectangle(&oledrgb, 16, 24, 31, 39, OLEDrgb_BuildRGB(0, 0, 255), 1, 	OLEDrgb_BuildRGB(0, 0, 255));
+			   else 					OLEDrgb_DrawRectangle(&oledrgb, 16, 24, 31, 39, OLEDrgb_BuildRGB(0, 0, 0), 1, 		OLEDrgb_BuildRGB(0, 0, 0));
+			   if (spot_b == 3) 		OLEDrgb_DrawRectangle(&oledrgb, 32, 24, 47, 39, OLEDrgb_BuildRGB(255, 0, 0), 1, 	OLEDrgb_BuildRGB(255, 0, 0));
+			   else if (spot_b == 2) 	OLEDrgb_DrawRectangle(&oledrgb, 32, 24, 47, 39, OLEDrgb_BuildRGB(255, 255, 0), 1, 	OLEDrgb_BuildRGB(255, 255, 0));
+			   else if (spot_b == 1) 	OLEDrgb_DrawRectangle(&oledrgb, 32, 24, 47, 39, OLEDrgb_BuildRGB(0, 255, 0), 1, 	OLEDrgb_BuildRGB(0,255, 0));
+			   else if (spot_b == 0) 	OLEDrgb_DrawRectangle(&oledrgb, 32, 24, 47, 39, OLEDrgb_BuildRGB(0, 0, 255), 1, 	OLEDrgb_BuildRGB(0, 0, 255));
+			   else 					OLEDrgb_DrawRectangle(&oledrgb, 32, 24, 47, 39, OLEDrgb_BuildRGB(0, 0, 0), 1, 		OLEDrgb_BuildRGB(0, 0, 0));
+			   if (spot_c == 3) 		OLEDrgb_DrawRectangle(&oledrgb, 48, 24, 63, 39, OLEDrgb_BuildRGB(255, 0, 0), 1, 	OLEDrgb_BuildRGB(255, 0, 0));
+			   else if (spot_c == 2) 	OLEDrgb_DrawRectangle(&oledrgb, 48, 24, 63, 39, OLEDrgb_BuildRGB(255, 255, 0), 1, 	OLEDrgb_BuildRGB(255, 255, 0));
+			   else if (spot_c == 1) 	OLEDrgb_DrawRectangle(&oledrgb, 48, 24, 63, 39, OLEDrgb_BuildRGB(0, 255, 0), 1, 	OLEDrgb_BuildRGB(0,255, 0));
+			   else if (spot_c == 0) 	OLEDrgb_DrawRectangle(&oledrgb, 48, 24, 63, 39, OLEDrgb_BuildRGB(0, 0, 255), 1, 	OLEDrgb_BuildRGB(0, 0, 255));
+			   else 					OLEDrgb_DrawRectangle(&oledrgb, 48, 24, 63, 39, OLEDrgb_BuildRGB(0, 0, 0), 1, 		OLEDrgb_BuildRGB(0, 0, 0));
+			   if (spot_d == 3) 		OLEDrgb_DrawRectangle(&oledrgb, 64, 24, 79, 39, OLEDrgb_BuildRGB(255, 0, 0), 1, 	OLEDrgb_BuildRGB(255, 0, 0));
+			   else if (spot_d == 2) 	OLEDrgb_DrawRectangle(&oledrgb, 64, 24, 79, 39, OLEDrgb_BuildRGB(255, 255, 0), 1, 	OLEDrgb_BuildRGB(255, 255, 0));
+			   else if (spot_d == 1) 	OLEDrgb_DrawRectangle(&oledrgb, 64, 24, 79, 39, OLEDrgb_BuildRGB(0, 255, 0), 1, 	OLEDrgb_BuildRGB(0,255, 0));
+			   else if (spot_d == 0) 	OLEDrgb_DrawRectangle(&oledrgb, 64, 24, 79, 39, OLEDrgb_BuildRGB(0, 0, 255), 1, 	OLEDrgb_BuildRGB(0, 0, 255));
+			   else 					OLEDrgb_DrawRectangle(&oledrgb, 64, 24, 79, 39, OLEDrgb_BuildRGB(0, 0, 0), 1, 		OLEDrgb_BuildRGB(0, 0, 0));
+			   //OLEDrgb_DrawPixel(&oledrgb, 2, 3, OLEDrgb_BuildRGB(200, 12, 44));
+			   old_switch_data = switch_data;
+		   }
+
+
+
+		   if(button_data == 0b00100){
+			   xil_printf("button 2 pressed. submitting\n\r");
+			   guess[0] = spot_a;
+			   guess[1] = spot_b;
+			   guess[2] = spot_c;
+			   guess[3] = spot_d;
+		   	   unsubmitted = 0;
+		   }
+	   }
+	   //compare time
+	   int guess_temp[4], solution_temp[4];
+	   for (int i = 0; i < 4; i++){
+		   guess_temp[i] = guess[i];
+		   solution_temp[i] = solution[i];
+	   }
+	   int red = 0;
+	   int white = 0;
+	   for (int i = 0; i < 4; i++){
+		   if (guess_temp[i] == solution_temp[i]){
+			   guess_temp[i] = -1;
+			   solution_temp[i] = -1;
+			   red++;
+		   }
+	   }
+	   for (int i = 0; i < 4; i++){
+		   for (int j = 0; j < 4; j++){
+			   if (guess_temp[i] != -1 && solution_temp[j] != -1){
+				   if (guess_temp[i] == solution_temp[j]){
+					   guess_temp[i] = -1;
+					   solution_temp[j] = -1;
+					   white++;
+				   }
+			   }
+		   }
+	   }
+	   if (red == 4) { stage = 2; }
+	   OLEDrgb_Clear(&oledrgb);
+	   xil_printf("Red: %d, White: %d\n\r", red, white);
+	   OLEDrgb_SetCursor(&oledrgb, 2, 1);
+	   OLEDrgb_PutString(&oledrgb, "Result"); // Default color (green)}}
+	   OLEDrgb_DrawRectangle(&oledrgb, 16, 24, 31, 39, OLEDrgb_BuildRGB(255, 0, 0), 1, 	OLEDrgb_BuildRGB(255, 0, 0));
+	   OLEDrgb_DrawRectangle(&oledrgb, 16, 40, 31, 55, OLEDrgb_BuildRGB(255, 255, 255), 1, 	OLEDrgb_BuildRGB(255, 255, 255));
+	   char red_str[20];
+	   sprintf(red_str, "%d", red);
+	   char white_str[20];
+	   sprintf(white_str, "%d", white);
+	   OLEDrgb_SetCursor(&oledrgb, 4, 3);
+	   OLEDrgb_PutString(&oledrgb, red_str); // Default color (green)}
+	   OLEDrgb_SetCursor(&oledrgb, 4, 5);
+	   OLEDrgb_PutString(&oledrgb, white_str); // Default color (green)}
+	   usleep(2000000);
+	   OLEDrgb_Clear(&oledrgb);
+	   unsubmitted = 1;
+
+   }
+   OLEDrgb_Clear(&oledrgb);
+
+   while(stage == 2){
+	   OLEDrgb_SetCursor(&oledrgb, 2, 2);
+	   OLEDrgb_PutString(&oledrgb, "YOU WIN!"); // Default color (green)}}
+	   OLEDrgb_SetCursor(&oledrgb, 1, 4);
+	   OLEDrgb_PutString(&oledrgb, "Play again?"); // Default color (green)}}
+	   OLEDrgb_SetCursor(&oledrgb, 3, 5);
+	   OLEDrgb_PutString(&oledrgb, "[BTN2]"); // Default color (green)}}
+	   usleep(200000);			//delay
+	   OLEDrgb_SetCursor(&oledrgb, 2, 2);
+	   OLEDrgb_PutString(&oledrgb, "                "); // Default color (green)}}
+	   usleep(200000);
+//	   if(button_data == 0b00100){
+//		   stage = 0;
+//	   }
+   };
+
+   //reset stage
+
+
+   while(1){
+      switch_data = XGpio_DiscreteRead(&input, 2);	//get switch data
+
+      //XGpio_DiscreteWrite(&output, 1, switch_data);	//write switch data to the LEDs
+
+      button_data = XGpio_DiscreteRead(&input, 1);	//get button data
+      xil_printf("Switch info: %d\n\r", switch_data);
+
+      //print message dependent on whether one or more buttons are pressed
+      if(button_data == 0b00000){} //do nothing
+
+      else if(button_data == 0b00001)
+         xil_printf("button 0 pressed\n\r");
+
+      else if(button_data == 0b00010)
+         xil_printf("button 1 pressed\n\r");
+
+      else if(button_data == 0b00100)
+         xil_printf("button 2 pressed\n\r");
+
+      else if(button_data == 0b01000)
+         xil_printf("button 3 pressed\n\r");
+
+      else if(button_data == 0b10000)
+              xil_printf("button 4 pressed\n\r");
+
+      else
+         xil_printf("multiple buttons pressed\n\r");
+
+      usleep(200000);			//delay
+
+   }
+//   sleep(5); // Wait 5 seconds
+//
+//   OLEDrgb_DrawBitmap(&oledrgb, 0, 0, 95, 63, (u8*) tommy);
+
+//	XGpio gpio;
+//	u32 btn, led;
+//
+//	XGpio_Initialize(&gpio, 0);
+//
+//	XGpio_SetDataDirection(&gpio, 2, 0x00000000); // set LED GPIO channel tristates to All Output
+//	XGpio_SetDataDirection(&gpio, 1, 0xFFFFFFFF); // set BTN GPIO channel tristates to All Input
+//
+//	while (1)
+//	{
+//		btn = XGpio_DiscreteRead(&gpio, 1);
+//
+////		if (btn != 0) // turn all LEDs on when any button is pressed
+////			led = 0xFFFFFFFF;
+////		else
+////			led = 0x00000000;
+////
+////		XGpio_DiscreteWrite(&gpio, 2, led);
+//
+//		xil_printf("\rbutton state: %08x", btn);
+//	}
+}
+
+void DemoCleanup() {
+   DisableCaches();
+}
+
+void EnableCaches() {
+#ifdef __MICROBLAZE__
+#ifdef XPAR_MICROBLAZE_USE_ICACHE
+   Xil_ICacheEnable();
+#endif
+#ifdef XPAR_MICROBLAZE_USE_DCACHE
+   Xil_DCacheEnable();
+#endif
+#endif
+}
+
+void DisableCaches() {
+#ifdef __MICROBLAZE__
+#ifdef XPAR_MICROBLAZE_USE_DCACHE
+   Xil_DCacheDisable();
+#endif
+#ifdef XPAR_MICROBLAZE_USE_ICACHE
+   Xil_ICacheDisable();
+#endif
+#endif
+}

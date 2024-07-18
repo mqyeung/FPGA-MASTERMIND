@@ -1,0 +1,225 @@
+/******************************************************************************/
+/*                                                                            */
+/* main.c -- Demo project for the PmodOLEDrgb IP                              */
+/*                                                                            */
+/******************************************************************************/
+/* Author: Thomas Kappenman                                                   */
+/* Copyright 2016, Digilent Inc.                                              */
+/******************************************************************************/
+/* File Description:                                                          */
+/*                                                                            */
+/* This demo project initializes and uses the PmodOLEDrgb to display strings  */
+/* of different colors and a BMP image.                                       */
+/*                                                                            */
+/******************************************************************************/
+/* Revision History:                                                          */
+/*                                                                            */
+/*    02/08/2016(TommyK):   Created                                           */
+/*    08/25/2017(artvvb):   Added proper cache management functions           */
+/*    11/11/2017(atangzwj): Validated for Vivado 2016.4                       */
+/*    02/17/2018(atangzwj): Validated for Vivado 2017.4                       */
+/*                                                                            */
+/******************************************************************************/
+
+//#include "bitmap.h"
+//#include "PmodOLEDrgb.h"
+//#include "sleep.h"
+//#include "xil_cache.h"
+#include "xparameters.h"
+//AXI GPIO driver
+//#include "xgpio.h"
+
+//send data over UART
+//#include "xil_printf.h"
+
+//information about AXI peripherals
+#include "xparameters.h"
+
+#include <stdio.h>
+#include "platform.h"
+
+#include "xbasic_types.h"
+#include "xstatus.h"
+//#include <xgpio.h>
+void DemoInitialize();
+void DemoRun();
+void DemoCleanup();
+void EnableCaches();
+void DisableCaches();
+
+PmodOLEDrgb oledrgb;
+
+u8 rgbUserFont[] = {
+   0x00, 0x04, 0x02, 0x1F, 0x02, 0x04, 0x00, 0x00, // 0x00
+   0x0E, 0x1F, 0x15, 0x1F, 0x17, 0x10, 0x1F, 0x0E, // 0x01
+   0x00, 0x1F, 0x11, 0x00, 0x00, 0x11, 0x1F, 0x00, // 0x02
+   0x00, 0x0A, 0x15, 0x11, 0x0A, 0x04, 0x00, 0x00, // 0x03
+   0x07, 0x0C, 0xFA, 0x2F, 0x2F, 0xFA, 0x0C, 0x07  // 0x04
+}; // This table defines 5 user characters, although only one is used
+
+int main(void) {
+   DemoInitialize();
+   DemoRun();
+   DemoCleanup();
+   return 0;
+}
+
+void DemoInitialize() {
+   EnableCaches();
+   OLEDrgb_begin(&oledrgb, XPAR_PMODOLEDRGB_0_AXI_LITE_GPIO_BASEADDR,
+         XPAR_PMODOLEDRGB_0_AXI_LITE_SPI_BASEADDR);
+}
+
+void DemoRun() {
+   char ch;
+
+   // Define the user definable characters
+   for (ch = 0; ch < 5; ch++) {
+      OLEDrgb_DefUserChar(&oledrgb, ch, &rgbUserFont[ch * 8]);
+   }
+
+   OLEDrgb_SetCursor(&oledrgb, 2, 1);
+   OLEDrgb_PutString(&oledrgb, "E"); // Default color (green)
+   OLEDrgb_SetCursor(&oledrgb, 1, 4);
+   OLEDrgb_SetFontColor(&oledrgb, OLEDrgb_BuildRGB(0, 0, 255)); // Blue font
+   OLEDrgb_PutString(&oledrgb, "E");
+
+//   OLEDrgb_SetFontColor(&oledrgb, OLEDrgb_BuildRGB(200, 200, 44));
+//   OLEDrgb_SetCursor(&oledrgb, 1, 6);
+//   OLEDrgb_PutChar(&oledrgb, 4);
+
+   OLEDrgb_SetFontColor(&oledrgb, OLEDrgb_BuildRGB(200, 12, 44));
+   OLEDrgb_SetCursor(&oledrgb, 1, 6);
+   OLEDrgb_PutString(&oledrgb, "E");
+//   OLEDrgb_PutChar(&oledrgb, 0);
+
+
+//   XGpio input, output;
+//   int button_data = 0;
+//   int switch_data = 0;
+//
+//   XGpio_Initialize(&input, XPAR_AXI_GPIO_0_DEVICE_ID);	//initialize input XGpio variable
+//   //XGpio_Initialize(&input, XPAR_AXI_GPIO_1_DEVICE_ID);	//initialize input XGpio variable
+//  // XGpio_Initialize(&output, XPAR_AXI_GPIO_1_DEVICE_ID);	//initialize output XGpio variable
+//
+//   XGpio_SetDataDirection(&input, 1, 0xF);			//set first channel tristate buffer to input
+//   XGpio_SetDataDirection(&input, 2, 0xF);			//set second channel tristate buffer to input
+//
+//   //XGpio_SetDataDirection(&output, 1, 0x0);		//set first channel tristate buffer to output
+
+   // Clear the screen
+   xil_printf("%c[2J",27);
+
+   // Initialize the GPIO driver so that it's ready to use,
+   status = XGpio_Initialize(&GpioOutput,
+                                  XPAR_LEDS_8BIT_DEVICE_ID);
+   if (status != XST_SUCCESS)
+     return XST_FAILURE;
+   // Set the direction for all signals to be outputs
+   XGpio_SetDataDirection(&GpioOutput, 1, 0x0);
+
+   // Initialize the GPIO driver so that it's ready to use,
+   status = XGpio_Initialize(&GpioInput,
+                          XPAR_DIP_SWITCHES_8BIT_DEVICE_ID);
+   if (status != XST_SUCCESS)
+     return XST_FAILURE;
+   // Set the direction for all signals to be inputs
+   XGpio_SetDataDirection(&GpioInput, 1, 0xFFFFFFFF);
+
+   init_platform();
+
+   while(1){
+	    // Read the state of the DIP switches
+	    DataRead = XGpio_DiscreteRead(&GpioInput, 1);
+
+	    // Send the data to the UART if the settings change
+	    if(DataRead != OldData){
+	      xil_printf("DIP Switch settings: 0x%X\r\n", DataRead);
+	      // Set the GPIO outputs to the DIP switch values
+	      XGpio_DiscreteWrite(&GpioOutput, 1, DataRead);
+	      // Record the DIP switch settings
+	      OldData = DataRead;
+//      switch_data = XGpio_DiscreteRead(&input, 2);	//get switch data
+//
+//      //XGpio_DiscreteWrite(&output, 1, switch_data);	//write switch data to the LEDs
+//
+//      button_data = XGpio_DiscreteRead(&input, 1);	//get button data
+//      xil_printf("auauuaua\n\r");
+//      xil_printf("Switch data %d\n\r", switch_data);
+//
+//      //print message dependent on whether one or more buttons are pressed
+//      if(button_data == 0b00000){} //do nothing
+//
+//      else if(button_data == 0b00001)
+//         xil_printf("button 0 pressed\n\r");
+//
+//      else if(button_data == 0b00010)
+//         xil_printf("button 1 pressed\n\r");
+//
+//      else if(button_data == 0b00100)
+//         xil_printf("button 2 pressed\n\r");
+//
+//      else if(button_data == 0b01000)
+//         xil_printf("button 3 pressed\n\r");
+//
+//      else if(button_data == 0b10000)
+//              xil_printf("button 4 pressed\n\r");
+//
+//      else
+//         xil_printf("multiple buttons pressed\n\r");
+//
+//      usleep(200000);			//delay
+
+   }
+//   sleep(5); // Wait 5 seconds
+//
+//   OLEDrgb_DrawBitmap(&oledrgb, 0, 0, 95, 63, (u8*) tommy);
+
+//	XGpio gpio;
+//	u32 btn, led;
+//
+//	XGpio_Initialize(&gpio, 0);
+//
+//	XGpio_SetDataDirection(&gpio, 2, 0x00000000); // set LED GPIO channel tristates to All Output
+//	XGpio_SetDataDirection(&gpio, 1, 0xFFFFFFFF); // set BTN GPIO channel tristates to All Input
+//
+//	while (1)
+//	{
+//		btn = XGpio_DiscreteRead(&gpio, 1);
+//
+////		if (btn != 0) // turn all LEDs on when any button is pressed
+////			led = 0xFFFFFFFF;
+////		else
+////			led = 0x00000000;
+////
+////		XGpio_DiscreteWrite(&gpio, 2, led);
+//
+//		xil_printf("\rbutton state: %08x", btn);
+//	}
+}
+
+void DemoCleanup() {
+   DisableCaches();
+}
+
+void EnableCaches() {
+#ifdef __MICROBLAZE__
+#ifdef XPAR_MICROBLAZE_USE_ICACHE
+   Xil_ICacheEnable();
+#endif
+#ifdef XPAR_MICROBLAZE_USE_DCACHE
+   Xil_DCacheEnable();
+#endif
+#endif
+}
+
+void DisableCaches() {
+#ifdef __MICROBLAZE__
+#ifdef XPAR_MICROBLAZE_USE_DCACHE
+   Xil_DCacheDisable();
+#endif
+#ifdef XPAR_MICROBLAZE_USE_ICACHE
+   Xil_ICacheDisable();
+#endif
+#endif
+}
